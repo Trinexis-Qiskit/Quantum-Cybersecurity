@@ -1,5 +1,5 @@
 # Q-SHIELD: Post-Quantum TLS Anomaly and Downgrade Detection
-### IBM Fall Fest 2026 | Trinexis x IEEE | Domain: Banking / Cybersecurity | Participant Guide v2 (DRAFT FOR REVIEW)
+### IBM Fall Fest 2026 | Trinexis x IEEE | Domain: Banking / Cybersecurity | Participant Guide 
 
 ---
 
