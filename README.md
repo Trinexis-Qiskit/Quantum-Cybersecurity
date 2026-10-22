@@ -384,67 +384,6 @@ q_1 -> 107 ───┤ Rz(3.0144) ├──┤ √X ├┤ Rz(-0.49463) ├┤ 
 | ![BEFORE VQC logical circuit](figures/21_vqc_logical_before.png) | ![AFTER VQC logical circuit](figures/22_vqc_logical_after.png) |
 | ![BEFORE circuit transpiled for ibm_marrakesh](figures/24_vqc_isa_before.png) | ![AFTER circuit transpiled for ibm_marrakesh](figures/24b_vqc_isa_after.png) |
 
-**Create and print the circuits yourself.** This builds both circuits, draws them as text, transpiles for your chosen backend and prints the numbers you must report. Drawing and transpiling run on your CPU; only the `sampler.run` step uses the QPU.
-```python
-import hashlib
-import io
-
-from qiskit import ClassicalRegister, QuantumCircuit, QuantumRegister, qpy
-from qiskit.transpiler.preset_passmanagers import generate_preset_pass_manager
-
-
-def circuit_hash(qc):
-    buf = io.BytesIO()
-    qpy.dump(qc, buf)
-    return hashlib.sha256(buf.getvalue()).hexdigest()
-
-
-def vqc_before(x, theta, phi):
-    """Basic 2-qubit VQC: Ry encoding, CX entangler, parity readout."""
-    qc = QuantumCircuit(QuantumRegister(2, "q"), ClassicalRegister(2, "meas"))
-    for q in range(2):
-        qc.ry(x[q], q)
-    for q in range(2):
-        qc.ry(theta[q], q)
-    qc.cx(0, 1)
-    for q in range(2):
-        qc.ry(phi[q], q)
-    qc.measure([0, 1], [0, 1])
-    return qc
-
-
-def vqc_after(x, theta, phi):
-    """Improved VQC: Ry+Rz encoding, CZ entangler, data re-uploading."""
-    qc = QuantumCircuit(QuantumRegister(2, "q"), ClassicalRegister(2, "meas"))
-    for q in range(2):
-        qc.ry(x[q], q)
-        qc.rz(x[q], q)
-        qc.ry(theta[q], q)
-    qc.cz(0, 1)
-    for q in range(2):
-        qc.ry(x[q], q)
-        qc.ry(phi[q], q)
-    qc.measure([0, 1], [0, 1])
-    return qc
-
-
-x, theta, phi = [0.5, -0.5], [0.4, -0.4], [0.3, -0.3]   # x: your 2 scaled features, angles in [-pi, pi]
-before, after = vqc_before(x, theta, phi), vqc_after(x, theta, phi)
-print(before.draw("text"))
-print(after.draw("text"))
-before.draw("mpl", filename="figures/vqc_before_logical.png")    # needs matplotlib and pylatexenc
-after.draw("mpl", filename="figures/vqc_after_logical.png")
-
-# `backend` and `layout` come from your preflight (Section 5.3); `layout` is your chosen physical qubit pair
-pm = generate_preset_pass_manager(optimization_level=1, backend=backend, initial_layout=layout, seed_transpiler=42)
-for name, qc in (("BEFORE", before), ("AFTER", after)):
-    isa = pm.run(qc)
-    ops = dict(isa.count_ops())
-    print(name, "depth", isa.depth(), "two-qubit gates", ops.get("cz", 0) + ops.get("ecr", 0) + ops.get("cx", 0), "ops", ops)
-    print(isa.draw("text"))
-    isa.draw("mpl", idle_wires=False, filename=f"figures/vqc_{name.lower()}_transpiled.png")
-    print(name, "circuit hash", circuit_hash(isa))   # save the QPY file and this hash with the job ID
-```
 Save each submitted circuit with `qpy.dump` and its hash next to the job ID, and use the **same** `initial_layout`, shots and sessions for BEFORE and AFTER.
 
 **What the reference run measured, as reported (threshold 0.5, 8 sessions, 4 anomalies and 4 normal)**
