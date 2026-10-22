@@ -131,7 +131,7 @@ If `service.usage()` fails, that is a `BLOCKED_IBM_ACCESS` situation (Section 1.
 | 2 | One classical ML model evaluated on all three evaluations (Section 3.5) | Metrics with confidence intervals |
 | 3 | Two hybrid quantum models (kernel method and QAOA+VQC) on real hardware | Job IDs, raw counts, QPU seconds |
 | 4 | A fair three-way comparison on identical sessions | Same IDs, same threshold policy, same metrics |
-| 5 | A circuit **before/after** comparison on the same backend, rows and shots | Transpiled depth and two-qubit gate counts, paired predictions |
+| 5 | A circuit **before/after** comparison on the same backend, rows and shots, with both circuits **created in your notebook and printed** (logical and transpiled) | Printed circuit diagrams, transpiled depth and two-qubit gate counts, paired predictions |
 | 6 | Honest interpretation of results | Insight text matches the printed numbers; no "improved" claims the numbers do not support |
 
 ### 2.3 Target to aim for
@@ -298,6 +298,9 @@ Run a **BEFORE** (baseline) and an **AFTER** (your improved) version on the **sa
 If features and circuit both change, label the result a **pipeline-level** comparison. To attribute the effect, add an **ablation**: the improved circuit on the original (non-QAOA) features. If AFTER is worse, keep and explain the negative result.
 
 ### 5.2 Evidence required per comparison
+**Your notebook must create both circuits in code and print them**: a text diagram (`circuit.draw("text")`) and a saved figure (`circuit.draw("mpl")`) for the logical and the transpiled version of BEFORE and AFTER, in cells that run before the job is submitted. Section 5.4 is a worked example and template.
+
+Also required:
 Original and transpiled circuit diagrams, depth, two-qubit gate count, qubit layout, circuit hash, per-session measured probabilities, thresholded label, shot (binomial) uncertainty, per-session BEFORE-vs-AFTER change, and a confusion matrix for each.
 
 ### 5.3 Working inside about 10 minutes of QPU time
@@ -310,6 +313,148 @@ Original and transpiled circuit diagrams, depth, two-qubit gate count, qubit lay
 - **Save the job ID immediately** after submission, before waiting. If your notebook restarts, retrieve with `service.job(job_id)` instead of resubmitting.
 - Validate each result: number of shots returned equals requested, one result per circuit, session mapping preserved. Fail closed on cancelled or timed-out jobs.
 - Stop and mark `BUDGET_EXHAUSTED` rather than overspend.
+
+### 5.4 Worked example: the BEFORE and AFTER circuits on real hardware
+This example is from the reference run on **ibm_marrakesh** (job `db99fm0c77vs73813vs0`, 128 shots per circuit, 3 s of QPU time for 16 circuits: 8 BEFORE and 8 AFTER on the same 8 test sessions). Use it as a template for your own evidence, not as numbers to match.
+
+**Required in your notebook.** Your executed notebook must show, in cells that run **before** the hardware job is submitted:
+- [ ] Both the BEFORE and AFTER circuits **created in code** (functions that take your features and parameters), not pasted images
+- [ ] The logical circuits **printed** as text diagrams (`circuit.draw("text")`) and saved as figures (`circuit.draw("mpl")`)
+- [ ] The **transpiled** circuits for your backend printed and drawn too, with the physical qubit layout visible
+- [ ] A printed table with depth, two-qubit gate count, layout and circuit hash for BEFORE and AFTER
+- [ ] The exact circuits that were submitted saved (QPY) next to the job ID, so a judge can compare the diagram with what ran
+
+**What differs between the two circuits**
+
+| | BEFORE (basic) | AFTER (improved) |
+|---|---|---|
+| Feature encoding | `Ry(x)` per qubit | `Ry(x)` then `Rz(x)` per qubit |
+| Trainable layer | One `Ry` per qubit, then `CX` entangler, then one `Ry` per qubit | One `Ry` per qubit, then `CZ` entangler, then `Ry(x)` again (data re-uploading) and one `Ry` per qubit |
+| Readout | Both qubits measured; class probability is the share of odd-parity shots | Same |
+| Transpiled depth on the device | 10 | 11 |
+| Two-qubit gates after transpiling | 1 (`CZ`) | 1 (`CZ`) |
+
+**Logical circuits (what you design).** BEFORE:
+```text
+        ┌─────────────┐┌─────────────┐      ┌─────────────┐ ┌─┐
+   q_0: ┤ Ry(-2.7837) ├┤ Ry(0.64631) ├───■──┤ Ry(0.81762) ├─┤M├───
+        ├─────────────┤├─────────────┴┐┌─┴─┐├─────────────┴┐└╥┘┌─┐
+   q_1: ┤ Ry(-3.1408) ├┤ Ry(-0.64631) ├┤ X ├┤ Ry(-0.81762) ├─╫─┤M├
+        └─────────────┘└──────────────┘└───┘└──────────────┘ ║ └╥┘
+meas: 2/═════════════════════════════════════════════════════╩══╩═
+                                                             0  1
+```
+AFTER:
+```text
+        ┌─────────────┐┌─────────────┐ ┌────────────┐    ┌─────────────┐┌─────────────┐ ┌─┐
+   q_0: ┤ Ry(-3.1408) ├┤ Rz(-3.1408) ├─┤ Ry(0.4772) ├──■─┤ Ry(-3.1408) ├┤ Ry(0.52475) ├─┤M├───
+        ├─────────────┤├─────────────┤┌┴────────────┴┐ │ ├─────────────┤├─────────────┴┐└╥┘┌─┐
+   q_1: ┤ Ry(-2.8621) ├┤ Rz(-2.8621) ├┤ Ry(-0.22001) ├─■─┤ Ry(-2.8621) ├┤ Ry(-0.78194) ├─╫─┤M├
+        └─────────────┘└─────────────┘└──────────────┘   └─────────────┘└──────────────┘ ║ └╥┘
+meas: 2/═════════════════════════════════════════════════════════════════════════════════╩══╩═
+                                                                                         0  1
+```
+
+**Transpiled circuits (what the processor actually runs).** Gates are rewritten into the device's native set (`√X`, `Rz`, `CZ`), and `q_0 -> 97`, `q_1 -> 107` show the physical qubits chosen with `initial_layout`. BEFORE:
+```text
+global phase: π
+           ┌────┐ ┌────────────┐┌────┐┌────────┐   ┌────────┐    ┌────┐    ┌───────────┐┌────┐┌─┐
+ q_0 -> 97 ┤ √X ├─┤ Rz(1.0042) ├┤ √X ├┤ Rz(-π) ├─■─┤ Rz(-π) ├────┤ √X ├────┤ Rz(2.324) ├┤ √X ├┤M├
+           ├────┤┌┴────────────┤├────┤└────────┘ │ └─┬────┬─┘┌───┴────┴───┐└───┬────┬──┘└┬─┬─┘└╥┘
+q_1 -> 107 ┤ √X ├┤ Rz(-2.2163) ├┤ √X ├───────────■───┤ √X ├──┤ Rz(2.3884) ├────┤ √X ├────┤M├───╫─
+           └────┘└─────────────┘└────┘               └────┘  └────────────┘    └────┘    └╥┘   ║
+   meas: 2/═══════════════════════════════════════════════════════════════════════════════╩════╩═
+                                                                                          1    0
+```
+AFTER:
+```text
+           ┌─────────────────┐┌────┐┌──────────────┐┌────┐┌─────────────────┐     ┌────┐  ┌─────────────┐     ┌────┐    ┌────────┐┌─┐
+ q_0 -> 97 ┤ Rz(-0.00077346) ├┤ √X ├┤ Rz(-0.47643) ├┤ √X ├┤ Rz(-1.3006e-06) ├─■───┤ √X ├──┤ Rz(0.52552) ├─────┤ √X ├────┤ Rz(-π) ├┤M├───
+           └──┬────────────┬─┘├────┤├──────────────┤├────┤└─┬─────────────┬─┘ │ ┌─┴────┴─┐└────┬────┬───┘┌────┴────┴───┐└─┬────┬─┘└╥┘┌─┐
+q_1 -> 107 ───┤ Rz(3.0144) ├──┤ √X ├┤ Rz(-0.49463) ├┤ √X ├──┤ Rz(-2.9806) ├───■─┤ Rz(-π) ├─────┤ √X ├────┤ Rz(0.50241) ├──┤ √X ├───╫─┤M├
+              └────────────┘  └────┘└──────────────┘└────┘  └─────────────┘     └────────┘     └────┘    └─────────────┘  └────┘   ║ └╥┘
+   meas: 2/════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════╩══╩═
+                                                                                                                                   0  1
+```
+
+**Rendered figures** from the notebook (saved in `figures/`):
+
+| BEFORE (logical) | AFTER (logical) |
+|---|---|
+| ![BEFORE VQC logical circuit](figures/21_vqc_logical_before.png) | ![AFTER VQC logical circuit](figures/22_vqc_logical_after.png) |
+| ![BEFORE circuit transpiled for ibm_marrakesh](figures/24_vqc_isa_before.png) | ![AFTER circuit transpiled for ibm_marrakesh](figures/24b_vqc_isa_after.png) |
+
+**Create and print the circuits yourself.** This builds both circuits, draws them as text, transpiles for your chosen backend and prints the numbers you must report. Drawing and transpiling run on your CPU; only the `sampler.run` step uses the QPU.
+```python
+import hashlib
+import io
+
+from qiskit import ClassicalRegister, QuantumCircuit, QuantumRegister, qpy
+from qiskit.transpiler.preset_passmanagers import generate_preset_pass_manager
+
+
+def circuit_hash(qc):
+    buf = io.BytesIO()
+    qpy.dump(qc, buf)
+    return hashlib.sha256(buf.getvalue()).hexdigest()
+
+
+def vqc_before(x, theta, phi):
+    """Basic 2-qubit VQC: Ry encoding, CX entangler, parity readout."""
+    qc = QuantumCircuit(QuantumRegister(2, "q"), ClassicalRegister(2, "meas"))
+    for q in range(2):
+        qc.ry(x[q], q)
+    for q in range(2):
+        qc.ry(theta[q], q)
+    qc.cx(0, 1)
+    for q in range(2):
+        qc.ry(phi[q], q)
+    qc.measure([0, 1], [0, 1])
+    return qc
+
+
+def vqc_after(x, theta, phi):
+    """Improved VQC: Ry+Rz encoding, CZ entangler, data re-uploading."""
+    qc = QuantumCircuit(QuantumRegister(2, "q"), ClassicalRegister(2, "meas"))
+    for q in range(2):
+        qc.ry(x[q], q)
+        qc.rz(x[q], q)
+        qc.ry(theta[q], q)
+    qc.cz(0, 1)
+    for q in range(2):
+        qc.ry(x[q], q)
+        qc.ry(phi[q], q)
+    qc.measure([0, 1], [0, 1])
+    return qc
+
+
+x, theta, phi = [0.5, -0.5], [0.4, -0.4], [0.3, -0.3]   # x: your 2 scaled features, angles in [-pi, pi]
+before, after = vqc_before(x, theta, phi), vqc_after(x, theta, phi)
+print(before.draw("text"))
+print(after.draw("text"))
+before.draw("mpl", filename="figures/vqc_before_logical.png")    # needs matplotlib and pylatexenc
+after.draw("mpl", filename="figures/vqc_after_logical.png")
+
+# `backend` and `layout` come from your preflight (Section 5.3); `layout` is your chosen physical qubit pair
+pm = generate_preset_pass_manager(optimization_level=1, backend=backend, initial_layout=layout, seed_transpiler=42)
+for name, qc in (("BEFORE", before), ("AFTER", after)):
+    isa = pm.run(qc)
+    ops = dict(isa.count_ops())
+    print(name, "depth", isa.depth(), "two-qubit gates", ops.get("cz", 0) + ops.get("ecr", 0) + ops.get("cx", 0), "ops", ops)
+    print(isa.draw("text"))
+    isa.draw("mpl", idle_wires=False, filename=f"figures/vqc_{name.lower()}_transpiled.png")
+    print(name, "circuit hash", circuit_hash(isa))   # save the QPY file and this hash with the job ID
+```
+Save each submitted circuit with `qpy.dump` and its hash next to the job ID, and use the **same** `initial_layout`, shots and sessions for BEFORE and AFTER.
+
+**What the reference run measured, as reported (threshold 0.5, 8 sessions, 4 anomalies and 4 normal)**
+
+| | Flagged as anomaly | TP | FP | TN | FN | Recall | False alerts per 1,000 benign |
+|---|---|---|---|---|---|---|---|
+| BEFORE | all 8 | 4 | 4 | 0 | 0 | 1.00 | 1000 |
+| AFTER | none | 0 | 0 | 4 | 4 | 0.00 | 0 |
+
+Neither circuit separated the classes: BEFORE alarmed on everything and AFTER on nothing, and with 8 sessions the intervals are very wide (recall 95 % interval 0.51 to 1.00 for BEFORE, 0.00 to 0.49 for AFTER). The honest conclusion is that the improved circuit did not help on this cohort. That is the kind of negative result Section 2.2 asks you to report as measured.
 
 ---
 
@@ -357,7 +502,7 @@ You build this notebook. Every **code cell** must be preceded by a Markdown cell
 | 15-16 QAOA | QUBO, hardware sweep, selected features | Valid-mask rate and gap reported |
 | 17 Matched control | XGBoost on the same 2 features and 8 sessions | Metrics saved |
 | 18-19 M2 QSVC | Hardware kernels, PSD check, SVC fit | Heatmaps, eigenvalues, predictions |
-| 20-23 M3 VQC | BEFORE and AFTER circuits, hardware SPSA, matched inference, ablation | Loss curves, paired predictions |
+| 20-23 M3 VQC | BEFORE and AFTER circuits created and printed (logical and transpiled), hardware SPSA, matched inference, ablation | Printed circuit diagrams, loss curves, paired predictions |
 | 24 Job recovery | Re-query every job ID | All completed; counts match shots |
 | 25-27 Benchmark | Side-by-side table and charts, unseen-family chart | Same IDs, same metrics |
 | 28 Latency | CPU vs QPU response time | p50/p95 shown |
