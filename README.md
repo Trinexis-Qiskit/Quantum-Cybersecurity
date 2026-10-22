@@ -50,7 +50,7 @@ Work through these steps in order. Each one produces something you will need in 
 
 | Step | What you do | What you produce | Details |
 |---|---|---|---|
-| 1 | Set up the notebook: one `config` cell, credentials from environment variables, simulator ban check | Config cell, pinned versions | 4.4 |
+| 1 | Set up the notebook: one `config` cell, credentials from environment variables, simulator ban check | Config cell, pinned versions | 1.7, 4.4 |
 | 2 | Download from the Kaggle slug, hash the files, validate the join | File hashes, schema audit | 3.1, 3.2 |
 | 3 | Explore the data and classify every column as behaviour feature, optional flag or never-use | EDA figures, feature register | 3.4 |
 | 4 | Fingerprint rows, group-split, and set aside the evaluation B and C scenarios before any modelling | Frozen split, overlap checks (all 0) | 3.5, 3.6 |
@@ -79,6 +79,41 @@ How to decide when you finish:
 - Resubmitting a job after a notebook restart instead of retrieving it with `service.job(job_id)`, which wastes QPU time.
 - Leaving qubit placement to chance. A poor qubit pair can dominate your results.
 - Filling a gap (no token, no quota, no Kaggle access) with fake or cached outputs instead of marking the phase `BLOCKED_<REASON>`.
+
+### 1.7 Get your IBM Quantum account (10 minutes of QPU time)
+The free **Open Plan** on IBM Quantum Platform gives you about 10 minutes of real QPU time per rolling 28-day window, which is the budget this challenge is built around. Do this before the event because account creation and identity checks can take a while. IBM changes its portal from time to time, so if a screen differs from the steps below, follow IBM's current on-screen instructions.
+
+**Create the account**
+1. Open the IBM Quantum Platform at https://quantum.cloud.ibm.com and choose **Sign up** (or **Log in** if you already have an IBMid).
+2. Register with an email address, verify it, and accept the terms. This creates an IBM Cloud account.
+3. After signing in, choose the **Open Plan** and create an instance. Open Plan needs no payment details; do not pick a paid plan.
+
+**Collect the three things your notebook needs**
+| Item | Where to find it | Notes |
+|---|---|---|
+| API key | IBM Quantum Platform dashboard (API key panel), or https://cloud.ibm.com/iam/apikeys | Shown once when created; copy it right away |
+| Instance CRN | Open the instance on the Instances page and copy its CRN | A long identifier starting with `crn:v1:` |
+| Channel | `ibm_quantum_platform` | Name used by recent `qiskit-ibm-runtime` releases; check against your installed version |
+
+**Connect from the notebook without putting secrets in files**
+Set environment variables in your shell (or your platform's secrets store) before starting Jupyter:
+```bash
+export QISKIT_IBM_TOKEN="<your API key>"
+export QISKIT_IBM_INSTANCE="<your instance CRN>"
+export QISKIT_IBM_CHANNEL="ibm_quantum_platform"
+```
+```python
+from qiskit_ibm_runtime import QiskitRuntimeService
+service = QiskitRuntimeService()          # reads the environment variables
+print(service.usage())                    # remaining QPU time, check before you start
+```
+If `service.usage()` fails, that is a `BLOCKED_IBM_ACCESS` situation (Section 1.3): stop the quantum phases and report it, rather than filling the gap with simulated output.
+
+**Using the 10 minutes well**
+- Run the usage check at the start of the notebook and record the number you see in your evidence files.
+- QPU time is billed for execution only; queue waiting does not count. See Section 5.3 for batching circuits and keeping a reserve.
+- The allowance resets on a rolling window, so do not spend it on test runs before your real run. Develop and unit-test your classical code first.
+- The key is a password: never commit it, never paste it into a notebook cell, and delete it from IBM Cloud if it is ever exposed.
 
 ---
 
